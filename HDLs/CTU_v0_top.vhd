@@ -6,8 +6,14 @@ library UNISIM;
 use UNISIM.VComponents.all;
 use work.CTU_pack.all;
 use work.lite_bus_pack.all;
+use work.ipbus.all;
 
 entity CTU_v0_top is
+    generic (
+    g_cs_wonly_deep : natural:= 11; -- configuration space number of write only registers;
+    g_cs_ronly_deep : natural:= 14;  -- configuration space number of read only registers;
+    g_NSLV          : positive := 5
+    );
     Port (
     sysclk_p : in STD_LOGIC;
     sysclk_n : in STD_LOGIC;
@@ -41,6 +47,17 @@ entity CTU_v0_top is
     PDATA_TX : inout std_logic_vector(9 downto 0);
     PPS_IN_P : in std_logic;
     PPS_IN_N : in std_logic;
+    -- XADC port
+    vp_in : in std_logic;
+    vn_in : in std_logic;
+    --  ipbus interface
+    ipbus_tx_p : out std_logic;
+    ipbus_tx_n : out std_logic;
+    ipbus_rx_p : in std_logic;
+    ipbus_rx_n : in std_logic;
+    ipbus_clk_n : in std_logic;
+    ipbus_clk_p : in std_logic;
+    
     -- GPIOs
     SMA_o : inout std_logic_vector(4 downto 1);
     led : out std_logic_vector(2 downto 1);
@@ -67,28 +84,39 @@ entity CTU_v0_top is
 end CTU_v0_top;
 
 architecture Behavioral of CTU_v0_top is
-
+    
+    constant HW_VER : std_logic_vector(15 downto 0) := x"0000";
+    constant FW_VER : std_logic_vector(15 downto 0) := x"01FF";
     signal clk_local,clk_localx2,clk_sys,locked,pps_i : std_logic;
     signal data_from_RMU_i,data_to_RMU,raw_hit_i : t_array64(31 downto 0);
     signal tg_compare_error,init_calib_complete : std_logic;
     signal data_from_RMU : std_logic_vector(63 downto 0);
-    signal rx_aligned,resetdone_i,rx_slide,period_i : std_logic_vector(31 downto 0);
-    signal ch_mask_in : std_logic_vector(167 downto 0);
-    signal threshold_i,hit_sum : std_logic_vector(15 downto 0);
-    signal trig_mask : std_logic_vector(6 downto 0);
+    signal rx_aligned,resetdone_i,rx_slide,period : std_logic_vector(31 downto 0);
+    signal period_i :std_logic_vector(31 downto 0) := x"03B9ACA0";
+    signal ch_mask_in,ch_mask : std_logic_vector(167 downto 0);
+    signal threshold_i,threshold,hit_sum : std_logic_vector(15 downto 0);
+    signal trig_mask,trig_mask_i : std_logic_vector(4 downto 0);
     signal ch_delay_tap : t_array672(VFL_NUMBER - 1 downto 0);
     signal lite_bus_w : t_lite_wbus_arry(NSLV - 1 downto 0);
     signal lite_bus_r : t_lite_rbus_arry(NSLV - 1 downto 0);
     signal register_array,register_array_r : t_array48(NSLV - 1 downto 0);
     signal sel : integer range 0 to 255;
-    signal write_tap,write_tap_r,sma_sel,pps_original : std_logic;
-    signal ext_trig_i : std_logic_vector(4 downto 0);
+    signal write_tap,write_tap_r,sma_sel,pps_original,use_vio : std_logic;
+    signal ext_trig_i : std_logic_vector(2 downto 0);
     signal trig_i : std_logic_vector(7 downto 0);
     signal ch_sel : std_logic_vector(4 downto 0);
     signal ch : integer range 0 to 31;
-    signal timestamp_i : std_logic_vector(67 downto 0);
-    signal trig_led,live_led : std_logic;
-    signal window_i : std_logic_vector(4 downto 0);
+    signal timestamp_i,local_timer,timestamp_wr : std_logic_vector(67 downto 0);
+    signal trig_led,live_led,force_trig : std_logic;
+    signal window_i,window : std_logic_vector(4 downto 0);
+    signal cs_data_o:  t_array32(g_cs_wonly_deep-1 downto 0);
+    signal cs_data_i: t_array32(g_cs_ronly_deep-1 downto 0);
+    signal daq_wr : ipb_wbus;
+    signal daq_rd : ipb_rbus;
+    signal ipb_clk,sn_alert,rst_regs,timer_valid : std_logic;
+    signal temp_die_reg,vccint_reg,vccaux_reg : std_logic_vector(11 downto 0);
+    signal timer_8ns : unsigned(27 downto 0);
+    signal timer_utc : unsigned(39 downto 0);
 begin
 -- clock genrator
 Inst_clk_gen:entity work.clk_gen
@@ -103,31 +131,21 @@ Inst_clk_gen:entity work.clk_gen
     );
 --================================================--
 sdram_pen <= '0';
--- in integration test, ddr is not needed, power off.
--- DDR3 example design for test purpose
--- Inst_ddr3:entity work.example_top
-    -- port map(
-    -- ddr3_dq      => ddr3_dq,
-    -- ddr3_dqs_p   => ddr3_dqs_p,
-    -- ddr3_dqs_n   => ddr3_dqs_n,
-    -- ddr3_addr    => ddr3_addr,
-    -- ddr3_ba      => ddr3_ba,
-    -- ddr3_ras_n   => ddr3_ras_n,
-    -- ddr3_cas_n   => ddr3_cas_n,
-    -- ddr3_we_n    => ddr3_we_n,
-    -- ddr3_reset_n => ddr3_reset_n,
-    -- ddr3_ck_p    => ddr3_ck_p,
-    -- ddr3_ck_n    => ddr3_ck_n,
-    -- ddr3_cke     => ddr3_cke,
-    -- ddr3_cs_n    => ddr3_cs_n,
-    -- ddr3_dm      => ddr3_dm,
-    -- ddr3_odt     => ddr3_odt,
-    -- sys_clk_i    => clk_localx2,
-    -- sdram_pen    => sdram_pen, --enbale onboard sdram power
-    -- sdram_pg     => sdram_pg, --board sdram power good
-    -- tg_compare_error => tg_compare_error,
-    -- init_calib_complete => init_calib_complete
-    -- );
+P_local_timer:process(clk_localx2)
+begin
+    if locked = '0' then
+        timer_8ns <= (others => '0');
+        timer_utc <= (others => '0');
+    elsif rising_edge(clk_localx2) then
+        timer_8ns <= timer_8ns + 1;
+        if timer_8ns = 124999999 then
+            timer_8ns <= (others => '0');
+            timer_utc <= timer_utc + 1;
+        end if;
+    end if;
+end process;
+local_timer(27 downto 0) <= std_logic_vector(timer_8ns);
+local_timer(67 downto 28) <= std_logic_vector(timer_utc);
     --data_to_RMU(31 downto 24) <= (others => (x"00000000000000BC"));
 -- RMU links
 Inst_RMU_links:entity work.gt_wrapper
@@ -164,7 +182,6 @@ I => trig_i(7),
 O => FMC_O1_P,
 OB => FMC_O1_N
 );
--- vertex fitting module
 Inst_fmc_Ibuf0:IBUFDS
 generic map(
 DIFF_TERM => TRUE
@@ -192,7 +209,7 @@ DIFF_TERM => TRUE
 port map(
 I => FMC_I2_P,
 IB => FMC_I2_N,
-O => ext_trig_i(3)
+O => ext_trig_i(1)
 );
 Inst_fmc_Ibuf3:IBUFDS
 generic map(
@@ -201,7 +218,7 @@ DIFF_TERM => TRUE
 port map(
 I => FMC_I3_P,
 IB => FMC_I3_N,
-O => ext_trig_i(4)
+O => sn_alert
 );
 Inst_trig_module:entity work.trig_module
     generic map(
@@ -210,6 +227,9 @@ Inst_trig_module:entity work.trig_module
     port map(
     clk_i => clk_sys,
     reset_i => not locked,
+    daq_clk => ipb_clk,
+    daq_wr => daq_wr,
+    daq_rd_o => daq_rd,
     ch_mask_in => ch_mask_in,
     raw_hit_in => raw_hit_i(23 downto 0),
     --ch_delay_tap => ch_delay_tap,
@@ -218,7 +238,7 @@ Inst_trig_module:entity work.trig_module
     reset_event_cnt_i => '0',
     hit_sum => hit_sum,
     window_i => window_i,
-    en_trig_i => trig_mask,
+    en_trig_i => trig_mask_i,
     ext_trig_i => ext_trig_i,
     global_time_i => timestamp_i,
     period_i => period_i --x"0000F424"
@@ -237,101 +257,73 @@ Inst_wr_interface:entity work.wr_interface
     -- lite_bus_r => lite_bus_r,
     pps_o => pps_i,
     pps_original => pps_original,
-    timestamp_o => timestamp_i
+    timer_valid => timer_valid,
+    timestamp_o => timestamp_wr
     );
--- current CTU_v0 could not support WR interface slow control, use vio and ila instead
--- WR interface
--- Inst_wr_interface:entity work.wr_interface
-    -- port map(
-    -- sys_clk_i => clk_localx2,
-    -- reset_i => not locked,
-    -- PPS_IN_P => PPS_IN_P,
-    -- PPS_IN_N => PPS_IN_N,
-    -- PDATA_RX => PDATA_RX,
-    -- PDATA_TX => PDATA_TX,
-    -- lite_bus_w => lite_bus_w,
-    -- lite_bus_r => lite_bus_r,
-    -- pps_o => pps_i
-    -- );
--- --  local control_registers
--- Inst_regs:entity work.control_registers
-    -- port map(
-    -- sys_clk_i => clk_localx2,
-    -- reset_i => not locked,
-    -- lite_bus_w => lite_bus_w,
-    -- lite_bus_r => lite_bus_r,
-    -- register_o => register_array,
-    -- register_i => register_array_r
-    -- );
-    -- sel <= to_integer(unsigned(register_array(20)(7 downto 0)));
-    -- write_tap <= register_array(15)(0);
-    -- register_array_r(20) <= x"0000000000"&std_logic_vector(to_unsigned(sel, 8));
--- process(clk_localx2)
--- begin
-    -- if rising_edge(clk_localx2) then
-        -- write_tap_r <= write_tap;
-        -- if write_tap_r = '0' and write_tap = '1' then
-            -- ch_delay_tap(sel)(47 downto 0) <= register_array(0);
-            -- ch_delay_tap(sel)(95 downto 48) <= register_array(1);
-            -- ch_delay_tap(sel)(143 downto 96) <= register_array(2);
-            -- ch_delay_tap(sel)(191 downto 144) <= register_array(3);
-            -- ch_delay_tap(sel)(239 downto 192) <= register_array(4);
-            -- ch_delay_tap(sel)(287 downto 240) <= register_array(5);
-            -- ch_delay_tap(sel)(335 downto 288) <= register_array(6);
-            -- ch_delay_tap(sel)(383 downto 336) <= register_array(7);
-            -- ch_delay_tap(sel)(431 downto 384) <= register_array(8);
-            -- ch_delay_tap(sel)(479 downto 432) <= register_array(9);
-            -- ch_delay_tap(sel)(527 downto 480) <= register_array(10);
-            -- ch_delay_tap(sel)(575 downto 528) <= register_array(11);
-            -- ch_delay_tap(sel)(623 downto 576) <= register_array(12);
-            -- ch_delay_tap(sel)(671 downto 624) <= register_array(13);
-        -- end if;
-    -- end if;
--- end process;
-    -- ch_mask_in(47 downto 0) <= register_array(14);
-    -- ch_mask_in(95 downto 48) <= register_array(15);
-    -- ch_mask_in(143 downto 96) <= register_array(16);
-    -- ch_mask_in(167 downto 144) <= register_array(17)(23 downto 0);
-    -- threshold_i <= register_array(18)(15 downto 0);
-    -- trig_mask <= register_array(19)(4 downto 0);
-    -- register_array_r(0)  <= ch_delay_tap(sel)(47 downto 0);
-    -- register_array_r(1)  <= ch_delay_tap(sel)(95 downto 48);
-    -- register_array_r(2)  <= ch_delay_tap(sel)(143 downto 96); 
-    -- register_array_r(3)  <= ch_delay_tap(sel)(191 downto 144);
-    -- register_array_r(4)  <= ch_delay_tap(sel)(239 downto 192);
-    -- register_array_r(5)  <= ch_delay_tap(sel)(287 downto 240);
-    -- register_array_r(6)  <= ch_delay_tap(sel)(335 downto 288);
-    -- register_array_r(7)  <= ch_delay_tap(sel)(383 downto 336);
-    -- register_array_r(8)  <= ch_delay_tap(sel)(431 downto 384);
-    -- register_array_r(9)  <= ch_delay_tap(sel)(479 downto 432);
-    -- register_array_r(10) <= ch_delay_tap(sel)(527 downto 480);
-    -- register_array_r(11) <= ch_delay_tap(sel)(575 downto 528);
-    -- register_array_r(12) <= ch_delay_tap(sel)(623 downto 576);
-    -- register_array_r(13) <= ch_delay_tap(sel)(671 downto 524);
-    -- register_array_r(14) <= ch_mask_in(47 downto 0);
-    -- register_array_r(15) <= ch_mask_in(95 downto 48);
-    -- register_array_r(16) <= ch_mask_in(143 downto 96);
-    -- register_array_r(17) <= x"000000"&ch_mask_in(167 downto 144);
-    -- register_array_r(18) <= x"00000000"&threshold_i;
-    
-    -- register_array_r(19) <= x"0000000000"&'0'&trig_mask&init_calib_complete&locked;
--- debug cores
---ch_mask_in(167 downto 14) <= (others => '1');
-Inst_vio:entity work.vio_0
+    timestamp_i <= timestamp_wr when timer_valid = '1' else local_timer;
+Inst_ipbus:entity work.ipbus_body
+    generic map(g_cs_wonly_deep => g_cs_wonly_deep, -- configuration space number of write only registers;
+           g_cs_ronly_deep => g_cs_ronly_deep,  -- configuration space number of read only registers;
+	        g_NSLV  => 5
+           )
+    port map(
+    eth_clk_p => ipbus_clk_p,
+    eth_clk_n => ipbus_clk_n,
+    gtrefclk_out => open,
+    eth_tx_p => ipbus_tx_p,
+	eth_tx_n => ipbus_tx_n,
+	eth_rx_p => ipbus_rx_p,
+	eth_rx_n => ipbus_rx_n,
+    mac_addr => X"021ddba11574",
+	ip_addr => X"C0A80A74", --192.168.10.32
+    ipb_clk_o => ipb_clk,
+    ipb_daq_wr => daq_wr,
+    ipb_daq_rd => daq_rd,
+    cs_data_o        => cs_data_o,
+    cs_data_i        => cs_data_i
+    );
+Inst_vio:entity work.vio_1
     port map(
     clk => clk_sys,
     probe_in0(0) => locked,
     probe_in1 => rx_aligned(1 downto 0),
-    probe_out0 => ch_mask_in,--(13 downto 0),
-    probe_out1 => threshold_i,
+    probe_out0 => ch_mask,--(13 downto 0),
+    probe_out1 => threshold,
     probe_out2 => trig_mask, --'1' to enable trigger source
-    probe_out3(0) => ext_trig_i(2), --manual trigger
+    probe_out3(0) => force_trig, --manual trigger
     probe_out4 => ch_sel,
-    probe_out5 => period_i, --default x"3B9ACA0", 1s
+    probe_out5 => period, --default x"3B9ACA0", 1s
     probe_out6(0) => sma_sel,
-    probe_out7 => window_i
+    probe_out7 => window,
+    probe_out8(0) => use_vio
     );
     ch <= to_integer(unsigned(ch_sel));
+    cs_data_i(0) <= HW_VER&FW_VER;
+    cs_data_i(1) <= rx_aligned;
+    cs_data_i(2) <= ch_mask_in(31 downto 0);
+    cs_data_i(3) <= ch_mask_in(63 downto 32);
+    cs_data_i(4) <= ch_mask_in(95 downto 64);
+    cs_data_i(5) <= ch_mask_in(127 downto 96);
+    cs_data_i(6) <= ch_mask_in(159 downto 128);
+    cs_data_i(7) <= ch_mask_in(167 downto 160);
+    cs_data_i(8) <= x"0000" & threshold_i;
+    cs_data_i(9) <= x"000000"&"000" & trig_mask_i;
+    cs_data_i(10) <= x"000000"&"000" & window_i;
+    cs_data_i(11) <= period_i;
+    cs_data_i(12) <= x"000000"&temp_die_reg;
+    cs_data_i(13) <= x"00"&vccaux_reg&vccint_reg;
+    ch_mask_in(31 downto 0)   <= cs_data_o(0) when use_vio = '0' else ch_mask(31 downto 0);
+    ch_mask_in(63 downto 32)  <= cs_data_o(1) when use_vio = '0' else ch_mask(63 downto 32);
+    ch_mask_in(95 downto 64)  <= cs_data_o(2) when use_vio = '0' else ch_mask(95 downto 64);
+    ch_mask_in(127 downto 96) <= cs_data_o(3) when use_vio = '0' else ch_mask(127 downto 96);
+    ch_mask_in(159 downto 128)<= cs_data_o(4) when use_vio = '0' else ch_mask(159 downto 128);
+    ch_mask_in(167 downto 160)<= cs_data_o(5)(7 downto 0) when use_vio = '0' else ch_mask(167 downto 160);
+    threshold_i <= cs_data_o(6)(15 downto 0) when use_vio = '0' else threshold;
+    trig_mask_i <= cs_data_o(7)(4 downto 0) when use_vio = '0' else trig_mask;
+    ext_trig_i(2) <= cs_data_o(8)(0) when use_vio = '0' else force_trig;
+    ext_trig_i(0) <= cs_data_o(8)(1);
+    window_i <= cs_data_o(9)(4 downto 0) when use_vio = '0' else window;
+    period_i <= cs_data_o(10) when use_vio = '0' else period;
 Inst_ila:entity work.ila_0
     port map(
     clk => clk_sys,
@@ -356,14 +348,25 @@ Inst_breath_led:entity work.LED_breath
     );
     led(2) <= live_led;
     FMC_LED(2) <= live_led;
+Inst_monitors:entity work.monitors
+    port map(
+    clk_i => clk_sys,
+    rst_i => '0',
+    vp_in => vp_in,
+    vn_in => vn_in,
+    read_reg => timestamp_i(29),
+    temp_die_reg => temp_die_reg,
+    vccint_reg => vccint_reg,
+    vccaux_reg => vccaux_reg
+    );
 -- test signals
 SMA_o(1) <= pps_original when sma_sel = '0' else pps_i;
-SMA_o(2) <= clk_sys;
+SMA_o(2) <= trig_i(7);
 SMA_o(3) <= 'Z';
 SMA_o(4) <= 'Z';
-ext_trig_i(0) <= SMA_o(3);
-ext_trig_i(1) <= SMA_o(4);
+-- ext_trig_i(0) <= SMA_o(3);
+--ext_trig_i(1) <= SMA_o(4);
 --ext_trig_i(4 downto 3) <= "00"; --from FMC, to be added
-TEST_header(0) <= ext_trig_i(3);
-TEST_header(1) <= ext_trig_i(4);
+-- TEST_header(0) <= ext_trig_i(3);
+-- TEST_header(1) <= ext_trig_i(4);
 end Behavioral;

@@ -36,6 +36,10 @@ set_property PACKAGE_PIN D4 [get_ports {GTH_RXP[29]}]
 set_property PACKAGE_PIN C6 [get_ports {GTH_RXP[30]}]
 set_property PACKAGE_PIN A6 [get_ports {GTH_RXP[31]}]
 ####################################################
+## ipbus interface
+set_property PACKAGE_PIN AP37 [get_ports ipbus_clk_p]
+set_property PACKAGE_PIN BD41 [get_ports ipbus_tx_p]
+####################################################
 ##  local clock, same source with GT reference clocks
 set_property PACKAGE_PIN J30 [get_ports sysclk_p]
 set_property IOSTANDARD LVDS [get_ports sysclk_p]
@@ -92,10 +96,10 @@ set_property PACKAGE_PIN H28 [get_ports PPS_IN_P]
 ####################################################
 ##  FMC signals
 set_property PACKAGE_PIN H17 [get_ports FMC_I0_P]
-set_property PACKAGE_PIN H19 [get_ports FMC_O0_P]
 set_property IOSTANDARD LVDS [get_ports FMC_O0_P]
-set_property PACKAGE_PIN F16 [get_ports FMC_O1_P]
+set_property PACKAGE_PIN H19 [get_ports FMC_O0_P]
 set_property IOSTANDARD LVDS [get_ports FMC_O1_P]
+set_property PACKAGE_PIN F16 [get_ports FMC_O1_P]
 set_property PACKAGE_PIN G13 [get_ports FMC_I1_P]
 set_property IOSTANDARD LVDS [get_ports FMC_I0_P]
 set_property IOSTANDARD LVDS [get_ports FMC_I1_P]
@@ -152,3 +156,12 @@ set_property PULLUP true [get_ports {TEST_header[3]}]
 set_property PULLUP true [get_ports {TEST_header[2]}]
 set_property PULLUP true [get_ports {TEST_header[1]}]
 set_property PULLUP true [get_ports {TEST_header[0]}]
+
+set_property BITSTREAM.GENERAL.COMPRESS TRUE [current_design]
+set_property BITSTREAM.CONFIG.SPI_32BIT_ADDR YES [current_design]
+set_property BITSTREAM.CONFIG.SPI_BUSWIDTH 4 [current_design]
+set_property CONFIG_MODE SPIx4 [current_design]
+set_property C_CLK_INPUT_FREQ_HZ 300000000 [get_debug_cores dbg_hub]
+set_property C_ENABLE_CLK_DIVIDER false [get_debug_cores dbg_hub]
+set_property C_USER_SCAN_CHAIN 1 [get_debug_cores dbg_hub]
+connect_debug_port dbg_hub/clk [get_nets clk_sys]

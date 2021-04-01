@@ -17,6 +17,7 @@ entity wr_interface is
     PPS_IN_N : in std_logic;
     pps_o : out std_logic;
     pps_original : out std_logic;
+    timer_valid : out std_logic;
     timestamp_o : out std_logic_vector(67 downto 0)
     --debug_fsm : out std_logic_vector(3 downto 0)
     );
@@ -32,7 +33,7 @@ architecture Behavioral of wr_interface is
     type t_state is (st0_idle,st1_get_data,st2_assmble_data,
                     st3_wait_respond,st4_respond,st5_error);
     signal state : t_state;
-    signal ack,data_valid,timer_valid : std_logic;
+    signal ack,data_valid : std_logic;
     signal debug_fsm : std_logic_vector(3 downto 0);
     signal pps_i : std_logic;
     signal timer_8ns : std_logic_vector(27 downto 0);
@@ -59,7 +60,7 @@ Inst_timer:entity work.fmc_timer
     timer_8ns => timer_8ns,
     timer_valid => timer_valid
     );
-    timestamp_o <= timer_utc & timer_8ns when timer_valid = '1' else (others => '0');
+    timestamp_o <= timer_utc & timer_8ns;-- when timer_valid = '1' else (others => '0');
 -- p_latch_wr_data:process(sys_clk_i)
 -- begin
     -- if rising_edge(sys_clk_i) then
