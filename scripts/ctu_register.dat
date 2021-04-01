@@ -1,0 +1,39 @@
+*------------------------------------------------------------------------------------------
+* system regs
+*------------------------------------------------------------------------------------------
+* RegName               RegAddr     RegMask      R     W     Description
+*------------------------------------------------------------------------------------------
+* trigger information fifo
+trig_info           0x00000000  FFFFFFFF 1 1
+fifo_cnt           0x00000001  FFFFFFFF 1 0
+
+* write only registers
+ch_mask0              0x00000040  ffffffff    0   1
+ch_mask1              0x00000041  ffffffff    0   1
+ch_mask2           0x00000042  ffffffff    0   1
+ch_mask3           0x00000043  ffffffff    0   1
+ch_mask4                 0x00000044  ffffffff    0   1
+ch_mask5                 0x00000045  ffffffff    0   1
+threshold                0x00000046  ffffffff    0   1
+trig_mask                0x00000047  ffffffff    0   1
+force_trig                0x00000048  00000001    0   1
+rst_regs                0x00000048  00000002    0   1
+trig_window                0x00000049  ffffffff    0   1
+period                0x0000004A  ffffffff    0   1
+
+* read only registers
+version             0x00000100  ffffffff    1   0
+rx_aligned             0x00000101  ffffffff    1   0
+ch_mask0r          0x00000102  ffffffff    1   0
+ch_mask1r          0x00000103  ffffffff    1   0
+ch_mask2r          0x00000104  ffffffff    1   0
+ch_mask3r          0x00000105  ffffffff    1   0
+ch_mask4r          0x00000106  ffffffff    1   0
+ch_mask5r          0x00000107  ffffffff    1   0
+thresholdr               0x00000108  ffffffff    1   0
+trig_maskr               0x00000109  ffffffff    1   0
+trig_windowr                0x0000010a  ffffffff    1   0
+periodr                0x0000010B  ffffffff    1   0
+temp_fpga                0x0000010C  ffffffff    1   0
+voltages                0x0000010D  ffffffff    1   0
+
