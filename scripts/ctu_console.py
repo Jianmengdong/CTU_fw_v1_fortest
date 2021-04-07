@@ -16,6 +16,7 @@ while True:
                   "8: check trigger fifo counter\n"
                   "9: read trigger fifo\n"
                   "10: reset trigger fifo\n"
+                  "11: GCU test pulse\n"
                   "q: exit\n")
     if reply == "1":
         th = input("press 'Enter' to read, or input value (decimal) to set:\n")
@@ -46,7 +47,12 @@ while True:
             set_trigger_window(ctu, "w", int(window))
             print("done!")
     elif reply == "5":
-        pass
+        mask = input("press 'Enter' to read, or input value (decimal) to set:\n")
+        if len(mask) == 0:
+            print(set_channel_mask(ctu, "r"))
+        else:
+            set_channel_mask(ctu, "w", 0, int(mask))
+            print("done!")
     elif reply == "6":
         force_trigger(ctu)
         print("done")
@@ -62,5 +68,8 @@ while True:
     elif reply == "10":
         trigger_information(ctu, True)
         print("done!")
+    elif reply == "11":
+        gcu_test_pulse(ctu)
+        print("done")
     elif reply == "q":
         break

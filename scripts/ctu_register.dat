@@ -16,7 +16,7 @@ ch_mask4                 0x00000044  ffffffff    0   1
 ch_mask5                 0x00000045  ffffffff    0   1
 threshold                0x00000046  ffffffff    0   1
 trig_mask                0x00000047  ffffffff    0   1
-force_trig                0x00000048  00000001    0   1
+force_trig                0x00000048  0000000f    0   1
 rst_regs                0x00000048  00000002    0   1
 trig_window                0x00000049  ffffffff    0   1
 period                0x0000004A  ffffffff    0   1

@@ -39,6 +39,12 @@ def force_trigger(ctu):
     return 0
 
 
+def gcu_test_pulse(ctu):
+    ctu.set("force_trig", 2)
+    ctu.set("force_trig", 0)
+    return 0
+
+
 def set_channel_mask(ctu, rw, number=0, value=0):
     channel = "ch_mask" + str(number)
     if rw == "r":
